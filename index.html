@@ -25,7 +25,7 @@
   .sensitive-box { background: #181825; padding: 14px; border-radius: 10px; border-left: 4px solid #89B4FA; }
   .sensitive-box h3 { margin: 0 0 8px; font-size: 15px; color: #89B4FA; }
   .sensitive-box p { margin: 4px 0; font-size: 13px; color: #CDD6F4; }
-  #shieldOverlay { position: fixed; inset: 0; backdrop-filter: blur(26px); -webkit-backdrop-filter: blur(26px); background: rgba(17, 17, 27, 0.86); display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 9999; padding: 24px; }
+  #shieldOverlay { position: fixed; inset: 0; backdrop-filter: blur(26px); -webkit-backdrop-filter: blur(26px); background: rgba(17, 17, 27, 0.88); display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 9999; padding: 24px; }
   #shieldOverlay h2 { color: #F38BA8; font-size: 26px; margin-bottom: 10px; }
   #shieldOverlay p { color: #CDD6F4; font-size: 16px; max-width: 320px; line-height: 1.4; }
   #shieldOverlay button { flex: none; margin-top: 24px; padding: 12px 28px; background: #89B4FA; color: #11111B; }
@@ -42,7 +42,7 @@
   <div class="cam-wrap">
     <video id="video" autoplay playsinline muted></video>
   </div>
-  <div id="status" class="status-bar">Loading AI Face Engine...</div>
+  <div id="status" class="status-bar">Starting Camera &amp; AI Model...</div>
   <div class="btn-row">
     <button class="btn-reg" onclick="registerOwner()">1. Register Owner</button>
     <button id="guardBtn" class="btn-guard" onclick="toggleGuard()">2. Start Guard</button>
@@ -78,15 +78,21 @@
   let ownerSignature = null;
   let guardActive = false;
   let latestDetections = [];
+  let aiReady = false;
   let offCanvas = document.createElement("canvas");
   let offCtx = offCanvas.getContext("2d");
 
   const faceDetection = new FaceDetection({
     locateFile: (file) => `https://jsdelivr.net{file}`
   });
-  faceDetection.setOptions({ model: "short", minDetectionConfidence: 0.6 });
+  faceDetection.setOptions({ model: "short", minDetectionConfidence: 0.55 });
   faceDetection.onResults((results) => {
     latestDetections = results.detections || [];
+    if (!aiReady) {
+      aiReady = true;
+      statusEl.innerText = "AI Ready — Look at camera & tap '1. Register Owner'";
+      statusEl.style.color = "#A6E3A1";
+    }
   });
 
   async function initCamera() {
@@ -94,20 +100,21 @@
       const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
       video.srcObject = stream;
       video.onloadeddata = () => {
-        statusEl.innerText = "Camera Ready — Tap '1. Register Owner'";
-        statusEl.style.color = "#A6E3A1";
+        statusEl.innerText = "Camera Active — Loading AI Face Detector...";
         detectLoop();
       };
     } catch (err) {
-      statusEl.innerText = "Camera Blocked — Open via HTTPS link & Allow Camera";
+      statusEl.innerText = "Camera Blocked — Tap Lock icon in URL bar & Allow Camera";
       statusEl.style.color = "#F38BA8";
     }
   }
 
   async function detectLoop() {
     if (video.readyState >= 2) {
-      await faceDetection.send({ image: video });
-      if (guardActive) evaluateSecurity();
+      try {
+        await faceDetection.send({ image: video });
+        if (guardActive) evaluateSecurity();
+      } catch (e) {}
     }
     requestAnimationFrame(detectLoop);
   }
@@ -140,12 +147,20 @@
   }
 
   function registerOwner() {
+    if (!aiReady) {
+      statusEl.innerText = "Still loading AI model — wait 3 seconds & tap again";
+      statusEl.style.color = "#F9E2AF";
+      return;
+    }
     if (latestDetections.length === 1) {
-      ownerSignature = getFaceSignature(latestDetections.boundingBox);
-      statusEl.innerText = "Owner Face Registered! Tap '2. Start Guard'";
+      ownerSignature = getFaceSignature(latestDetections[0].boundingBox);
+      statusEl.innerText = "Owner Registered! Tap '2. Start Guard'";
       statusEl.style.color = "#A6E3A1";
+    } else if (latestDetections.length === 0) {
+      statusEl.innerText = "No face seen — center your face in good light & retry";
+      statusEl.style.color = "#F38BA8";
     } else {
-      statusEl.innerText = "Keep ONLY your face in camera & tap Register again";
+      statusEl.innerText = "Multiple faces seen — make sure ONLY you are in frame";
       statusEl.style.color = "#F38BA8";
     }
   }
@@ -160,6 +175,8 @@
     if (guardActive) {
       guardBtn.innerText = "Stop Guard";
       guardBtn.className = "btn-stop";
+      statusEl.innerText = "Guard Active — Scanning...";
+      statusEl.style.color = "#A6E3A1";
     } else {
       guardBtn.innerText = "2. Start Guard";
       guardBtn.className = "btn-guard";
@@ -184,7 +201,7 @@
       const sig = getFaceSignature(box);
       const diff = compareSignatures(ownerSignature, sig);
 
-      if (diff < 46) {
+      if (diff < 48) {
         ownerFound = true;
       } else if (box.width >= minSpyPercent) {
         closeSpyFound = true;
