@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>PrivacyShield Mobile — Biometric Anti-Spy Guard</title>
+<script src="https://jsdelivr.net" crossorigin="anonymous"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1E1E2E; color: #CDD6F4; display: flex; flex-direction: column; align-items: center; min-height: 100vh; padding-bottom: 30px; }
+  .header { text-align: center; padding: 18px 14px 8px; }
+  .header h1 { margin: 0; font-size: 22px; color: #89B4FA; }
+  .header p { margin: 4px 0 0; font-size: 12px; color: #A6ADC8; }
+  .card { background: #313244; border-radius: 16px; padding: 16px; width: 92%; max-width: 420px; margin: 10px 0; box-shadow: 0 6px 18px rgba(0,0,0,0.35); }
+  .cam-wrap { position: relative; width: 100%; border-radius: 12px; overflow: hidden; background: #11111B; aspect-ratio: 4/3; }
+  video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+  .status-bar { margin-top: 12px; padding: 10px; border-radius: 10px; background: #181825; font-weight: bold; font-size: 13px; text-align: center; color: #F9E2AF; }
+  .btn-row { display: flex; gap: 10px; margin-top: 12px; }
+  button { flex: 1; padding: 13px 10px; border: none; border-radius: 10px; font-weight: bold; font-size: 14px; cursor: pointer; }
+  .btn-reg { background: #89B4FA; color: #11111B; }
+  .btn-guard { background: #A6E3A1; color: #11111B; }
+  .btn-stop { background: #F38BA8; color: #11111B; }
+  .slider-box { margin-top: 14px; font-size: 12px; color: #CBA6F7; }
+  input[type=range] { width: 100%; margin-top: 6px; }
+  .sensitive-box { background: #181825; padding: 14px; border-radius: 10px; border-left: 4px solid #89B4FA; }
+  .sensitive-box h3 { margin: 0 0 8px; font-size: 15px; color: #89B4FA; }
+  .sensitive-box p { margin: 4px 0; font-size: 13px; color: #CDD6F4; }
+  #shieldOverlay { position: fixed; inset: 0; backdrop-filter: blur(26px); -webkit-backdrop-filter: blur(26px); background: rgba(17, 17, 27, 0.86); display: none; flex-direction: column; justify-content: center; align-items: center; text-align: center; z-index: 9999; padding: 24px; }
+  #shieldOverlay h2 { color: #F38BA8; font-size: 26px; margin-bottom: 10px; }
+  #shieldOverlay p { color: #CDD6F4; font-size: 16px; max-width: 320px; line-height: 1.4; }
+  #shieldOverlay button { flex: none; margin-top: 24px; padding: 12px 28px; background: #89B4FA; color: #11111B; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>PrivacyShield Mobile</h1>
+  <p>Owner Biometric Guard &bull; Distance-Aware Anti-Spy Blur</p>
+</div>
+
+<div class="card">
+  <div class="cam-wrap">
+    <video id="video" autoplay playsinline muted></video>
+  </div>
+  <div id="status" class="status-bar">Loading AI Face Engine...</div>
+  <div class="btn-row">
+    <button class="btn-reg" onclick="registerOwner()">1. Register Owner</button>
+    <button id="guardBtn" class="btn-guard" onclick="toggleGuard()">2. Start Guard</button>
+  </div>
+  <div class="slider-box">
+    <label>Proximity Filter — Ignore distant faces smaller than <span id="distVal">22</span>% of screen width:</label>
+    <input type="range" id="distSlider" min="12" max="40" value="22" oninput="document.getElementById('distVal').innerText=this.value">
+  </div>
+</div>
+
+<div class="card">
+  <div class="sensitive-box">
+    <h3>Confidential Team Demo Data</h3>
+    <p><strong>Project Code:</strong> DTI-SHIELD-2026</p>
+    <p><strong>Account Balance:</strong> &#8377; 4,85,000.00</p>
+    <p><strong>Security Policy:</strong> Screen stays clear for Owner; blurs immediately if a spy approaches close behind.</p>
+  </div>
+</div>
+
+<div id="shieldOverlay">
+  <h2>PRIVACY SHIELD ACTIVE</h2>
+  <p id="shieldReason">Close-range shoulder-surfer detected behind owner.</p>
+  <button onclick="unlockManually()">Unlock Screen</button>
+</div>
+
+<script>
+  const video = document.getElementById("video");
+  const statusEl = document.getElementById("status");
+  const shieldOverlay = document.getElementById("shieldOverlay");
+  const shieldReason = document.getElementById("shieldReason");
+  const guardBtn = document.getElementById("guardBtn");
+
+  let ownerSignature = null;
+  let guardActive = false;
+  let latestDetections = [];
+  let offCanvas = document.createElement("canvas");
+  let offCtx = offCanvas.getContext("2d");
+
+  const faceDetection = new FaceDetection({
+    locateFile: (file) => `https://jsdelivr.net{file}`
+  });
+  faceDetection.setOptions({ model: "short", minDetectionConfidence: 0.6 });
+  faceDetection.onResults((results) => {
+    latestDetections = results.detections || [];
+  });
+
+  async function initCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+      video.srcObject = stream;
+      video.onloadeddata = () => {
+        statusEl.innerText = "Camera Ready — Tap '1. Register Owner'";
+        statusEl.style.color = "#A6E3A1";
+        detectLoop();
+      };
+    } catch (err) {
+      statusEl.innerText = "Camera Blocked — Open via HTTPS link & Allow Camera";
+      statusEl.style.color = "#F38BA8";
+    }
+  }
+
+  async function detectLoop() {
+    if (video.readyState >= 2) {
+      await faceDetection.send({ image: video });
+      if (guardActive) evaluateSecurity();
+    }
+    requestAnimationFrame(detectLoop);
+  }
+
+  function getFaceSignature(relBox) {
+    const vw = video.videoWidth || 640;
+    const vh = video.videoHeight || 480;
+    const sx = Math.max(0, (relBox.xCenter - relBox.width / 2) * vw);
+    const sy = Math.max(0, (relBox.yCenter - relBox.height / 2) * vh);
+    const sw = Math.min(vw - sx, relBox.width * vw);
+    const sh = Math.min(vh - sy, relBox.height * vh);
+
+    offCanvas.width = 16;
+    offCanvas.height = 16;
+    offCtx.drawImage(video, sx, sy, sw, sh, 0, 0, 16, 16);
+    const data = offCtx.getImageData(0, 0, 16, 16).data;
+    let sig = [];
+    for (let i = 0; i < data.length; i += 4) {
+      sig.push(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+    }
+    return sig;
+  }
+
+  function compareSignatures(sig1, sig2) {
+    let diff = 0;
+    for (let i = 0; i < sig1.length; i++) {
+      diff += Math.abs(sig1[i] - sig2[i]);
+    }
+    return diff / sig1.length;
+  }
+
+  function registerOwner() {
+    if (latestDetections.length === 1) {
+      ownerSignature = getFaceSignature(latestDetections.boundingBox);
+      statusEl.innerText = "Owner Face Registered! Tap '2. Start Guard'";
+      statusEl.style.color = "#A6E3A1";
+    } else {
+      statusEl.innerText = "Keep ONLY your face in camera & tap Register again";
+      statusEl.style.color = "#F38BA8";
+    }
+  }
+
+  function toggleGuard() {
+    if (!ownerSignature) {
+      statusEl.innerText = "Tap '1. Register Owner' first!";
+      statusEl.style.color = "#F38BA8";
+      return;
+    }
+    guardActive = !guardActive;
+    if (guardActive) {
+      guardBtn.innerText = "Stop Guard";
+      guardBtn.className = "btn-stop";
+    } else {
+      guardBtn.innerText = "2. Start Guard";
+      guardBtn.className = "btn-guard";
+      shieldOverlay.style.display = "none";
+      statusEl.innerText = "Guard Paused";
+      statusEl.style.color = "#F9E2AF";
+    }
+  }
+
+  function unlockManually() {
+    shieldOverlay.style.display = "none";
+  }
+
+  function evaluateSecurity() {
+    const minSpyPercent = parseInt(document.getElementById("distSlider").value, 10) / 100.0;
+    let ownerFound = false;
+    let closeSpyFound = false;
+    let distantCount = 0;
+
+    for (const det of latestDetections) {
+      const box = det.boundingBox;
+      const sig = getFaceSignature(box);
+      const diff = compareSignatures(ownerSignature, sig);
+
+      if (diff < 46) {
+        ownerFound = true;
+      } else if (box.width >= minSpyPercent) {
+        closeSpyFound = true;
+      } else {
+        distantCount++;
+      }
+    }
+
+    if (closeSpyFound) {
+      shieldReason.innerText = ownerFound
+        ? "Close-range shoulder-surfer detected behind owner!"
+        : "Unrecognized user detected in front of phone!";
+      shieldOverlay.style.display = "flex";
+      statusEl.innerText = "ALERT: Screen Blurred!";
+      statusEl.style.color = "#F38BA8";
+    } else if (ownerFound) {
+      shieldOverlay.style.display = "none";
+      statusEl.innerText = distantCount > 0
+        ? `Owner Verified (${distantCount} distant person ignored)`
+        : "Owner Verified — Screen Unlocked";
+      statusEl.style.color = "#A6E3A1";
+    }
+  }
+
+  initCamera();
+</script>
+</body>
+</html>
